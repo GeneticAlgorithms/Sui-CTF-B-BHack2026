@@ -4,7 +4,7 @@ use sui::coin::Coin;
 use usdc::usdc::USDC;
 use ctf::flag;
 
-const COST_PER_FLAG: u64 = 5849000;
+const COST_PER_FLAG: u64 = 3849000;
 
 const EInvalidPaymentAmount: u64 = 0;
 

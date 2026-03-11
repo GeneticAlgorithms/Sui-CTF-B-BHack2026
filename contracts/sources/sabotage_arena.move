@@ -82,7 +82,7 @@ public fun attack(arena: &mut Arena, target: address, clock: &Clock, ctx: &mut T
   attacker.last_action_ms = now;
 
   let target_state = &mut arena.players[target];
-  target_state.shield = target_state.shield / 2;
+  target_state.shield = target_state.shield - 1;
 }
 
 public fun claim_flag(arena: &mut Arena, clock: &Clock, ctx: &mut TxContext): flag::Flag {

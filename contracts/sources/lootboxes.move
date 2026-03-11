@@ -13,8 +13,8 @@ public struct MaybeFlag has key, store {
 const ENoFlag: u64 = 0;
 const EInsufficientPayment: u64 = 1;
 
-// 15 USDC with 6 decimals = 15_000_000
-const REQUIRED_PAYMENT: u64 = 15_000_000;
+// 15 USDC with 6 decimals = 12_000_000
+const REQUIRED_PAYMENT: u64 = 12_000_000;
 
 #[allow(lint(public_random))]
 public fun open_lootbox(payment: Coin<USDC>, r: &Random, ctx: &mut TxContext): MaybeFlag {
