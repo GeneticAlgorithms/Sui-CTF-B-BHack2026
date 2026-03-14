@@ -16,7 +16,7 @@ const COOLDOWN_MS = 600_000; // 10 min between build/attack
 const SHIELD_THRESHOLD = 12;
 
 // Get from Sui Explorer: package 0x9363..., find shared Arena object from deploy tx.
-const ARENA_ID = process.env.ARENA_ID ?? '';
+const ARENA_ID = process.env.ARENA_ID ?? '0x7cf2ab748619f5f8e25a002aa2c60a85b7a6f61220f011358a32cb11c797a923';
 
 (async () => {
 	if (!ARENA_ID) {
@@ -48,7 +48,7 @@ const ARENA_ID = process.env.ARENA_ID ?? '';
 		});
 		try {
 			const result = await suiClient.signAndExecuteTransaction({ signer: keypair, transaction: tx });
-			if (result.result?.effects?.status?.status === 'success') {
+			if (result.$kind === "Transaction") {
 				console.log(`Build ${i + 1}/${SHIELD_THRESHOLD} ok.`);
 			}
 		} catch (e) {
@@ -73,15 +73,15 @@ const ARENA_ID = process.env.ARENA_ID ?? '';
 		transaction: txClaim,
 		include: { effects: true, objectTypes: true },
 	});
-	if (result.result?.effects?.status?.status === 'success') {
-		const digest = result.result.digest;
-		console.log('Flag claimed. Digest:', digest);
+	if (result.$kind === "Transaction") {
+		const digest = result.Transaction.digest;
+		console.log("Flag claimed. Digest:", digest);
 		const flagId = getFlagObjectIdFromResult(result);
 		if (digest && flagId) {
-			recordFlag('sabotage_arena', digest, flagId);
-			console.log('Flag ID saved to FLAGS/:', flagId);
+			recordFlag("sabotage_arena", digest, flagId);
+			console.log("Flag ID saved to FLAGS/:", flagId);
 		}
 	} else {
-		console.log('Claim failed:', result.result?.effects?.status);
+		console.log("Claim failed:", result.FailedTransaction?.effects);
 	}
 })();

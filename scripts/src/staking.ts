@@ -13,7 +13,7 @@ const suiClient = new SuiGrpcClient({
 const CTF_PACKAGE_ID = '0x936313e502e9cbf6e7a04fe2aeb4c60bc0acd69729acc7a19921b33bebf72d03';
 const CLOCK_OBJECT_ID = '0x6';
 const MIN_STAKE_MIST = 1_000_000_000n; // 1 SUI
-const STAKING_POOL_ID = process.env.STAKING_POOL_ID ?? '';
+const STAKING_POOL_ID = process.env.STAKING_POOL_ID ?? '0x9cd5b5fe69a62761859536720b9b07c48a1e43b95d8c291855d9fc6779a3b494';
 const STAKE_RECEIPT_TYPE = `${CTF_PACKAGE_ID}::staking::StakeReceipt`;
 
 (async () => {
@@ -23,61 +23,66 @@ const STAKE_RECEIPT_TYPE = `${CTF_PACKAGE_ID}::staking::StakeReceipt`;
 	}
 
 	const sender = keypair.getPublicKey().toSuiAddress();
-	const { data: receipts } = await suiClient.listOwnedObjects({
+	const { objects: receipts } = await suiClient.listOwnedObjects({
 		owner: sender,
 		type: STAKE_RECEIPT_TYPE,
 	});
 
 	if (receipts?.length) {
-		// We have a receipt: update it to accrue time, then claim if eligible
+		// Try to claim: use both return values (Flag, Coin) in transferObjects to avoid UnusedValueWithoutDrop.
 		const receiptId = receipts[0].objectId;
-		const tx = new Transaction();
-		const updated = tx.moveCall({
-			target: `${CTF_PACKAGE_ID}::staking::update_receipt`,
-			arguments: [tx.object(receiptId), tx.object(CLOCK_OBJECT_ID)],
-		});
-		tx.moveCall({
+		const txClaim = new Transaction();
+		const [flag, coin] = txClaim.moveCall({
 			target: `${CTF_PACKAGE_ID}::staking::claim_flag`,
-			arguments: [tx.object(STAKING_POOL_ID), updated, tx.object(CLOCK_OBJECT_ID)],
+			arguments: [
+				txClaim.object(STAKING_POOL_ID),
+				txClaim.object(receiptId),
+				txClaim.object(CLOCK_OBJECT_ID),
+			],
 		});
-		try {
-			const result = await suiClient.signAndExecuteTransaction({
-				signer: keypair,
-				transaction: tx,
-				include: { effects: true, objectTypes: true },
-			});
-			if (result.result?.effects?.status?.status === 'success') {
-				const digest = result.result.digest;
-				console.log('Flag claimed. Digest:', digest);
-				const flagId = getFlagObjectIdFromResult(result);
-				if (digest && flagId) {
-					recordFlag('staking', digest, flagId);
-					console.log('Flag ID saved to FLAGS/:', flagId);
-				}
-				return;
+		txClaim.transferObjects([flag, coin], txClaim.pure.address(sender));
+		const claimResult = await suiClient.signAndExecuteTransaction({
+			signer: keypair,
+			transaction: txClaim,
+			include: { effects: true, objectTypes: true },
+		});
+		if (claimResult.$kind === "Transaction") {
+			const digest = (claimResult as { Transaction: { digest?: string } }).Transaction.digest;
+			const flagId = getFlagObjectIdFromResult(claimResult);
+			if (flagId) {
+				recordFlag("staking", digest ?? "", flagId);
+				console.log("Staking flag captured:", flagId);
+			} else {
+				console.log("Claim tx succeeded. Digest:", digest);
 			}
-		} catch (e) {
-			console.log('Claim failed (need 168+ hours staked). Error:', (e as Error).message);
+		} else {
+			const err = (claimResult as { FailedTransaction?: { effects?: unknown } }).FailedTransaction?.effects;
+			console.log("Claim failed (maybe <168h staked?). After 168h, run pnpm staking again. Error:", err);
+			console.log("Receipt ID:", receiptId);
 		}
+		return;
 	}
 
-	// No receipt or claim failed: stake 1 SUI
+	// No receipt: stake 1 SUI (must transfer the returned StakeReceipt to sender)
 	const txStake = new Transaction();
 	const [coin] = txStake.splitCoins(txStake.gas, [MIN_STAKE_MIST]);
-	txStake.moveCall({
+	const receipt = txStake.moveCall({
 		target: `${CTF_PACKAGE_ID}::staking::stake`,
 		arguments: [txStake.object(STAKING_POOL_ID), coin, txStake.object(CLOCK_OBJECT_ID)],
 	});
+	txStake.transferObjects([receipt], txStake.pure.address(sender));
 	const stakeResult = await suiClient.signAndExecuteTransaction({
 		signer: keypair,
 		transaction: txStake,
+		include: { effects: true },
 	});
-	if (stakeResult.result?.effects?.status?.status !== 'success') {
-		console.log('Stake failed:', stakeResult.result?.effects?.status);
+	if (stakeResult.$kind !== "Transaction") {
+		console.log("Stake failed:", stakeResult.FailedTransaction?.effects);
 		return;
 	}
-	const created = stakeResult.result?.effects?.created;
-	const receiptId = created?.find((r: { reference?: { objectId?: string } }) => r.reference?.objectId)?.reference?.objectId;
+	const effects = stakeResult.Transaction.effects as { changedObjects?: Array<{ objectId?: string; idOperation?: string }> } | undefined;
+	const created = effects?.changedObjects?.find((c) => c.idOperation === "Created");
+	const receiptId = created?.objectId;
 	console.log('Staked. Receipt:', receiptId ?? 'check effects');
 	console.log('Wait 168 hours (1 week), then run: pnpm staking');
 })();
