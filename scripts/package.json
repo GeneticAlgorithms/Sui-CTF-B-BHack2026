@@ -6,6 +6,7 @@
   "license": "MIT",
   "scripts": {
     "init-keypair": "tsx src/init.ts",
+    "set-keypair-from-mnemonic": "tsx src/set-keypair-from-mnemonic.ts",
     "moving-window": "tsx src/moving_window.ts",
     "merchant": "tsx src/merchant.ts",
     "lootboxes": "tsx src/lootboxes.ts",

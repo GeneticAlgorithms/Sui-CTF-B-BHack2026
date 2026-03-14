@@ -1,0 +1,1 @@
+challenge	flag_object_id	tx_digest
